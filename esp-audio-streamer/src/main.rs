@@ -1,109 +1,15 @@
 use anyhow::Result;
 
+use std::borrow::BorrowMut;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
+
 use esp_idf_svc::hal::{
     self,
     gpio::{Gpio43, Gpio46},
     peripherals::Peripherals,
 };
 use hal::{gpio::*, i2s::config::*, i2s::I2S0, i2s::*};
-
-use std::thread;
-use std::{
-    borrow::BorrowMut,
-    sync::mpsc::{self, Receiver, Sender},
-    sync::Arc,
-    sync::Mutex,
-};
-
-fn configure_i2s<'a>(
-    i2s0: I2S0,
-    clk_gpio: Gpio43,
-    din_gpio: Gpio46,
-) -> Result<I2sDriver<'a, I2sRx>, anyhow::Error> {
-    let rx_cfg = PdmRxConfig::new(
-        Config::default(),
-        PdmRxClkConfig::from_sample_rate_hz(96000),
-        PdmRxSlotConfig::from_bits_per_sample_and_slot_mode(DataBitWidth::Bits16, SlotMode::Mono),
-        PdmRxGpioConfig::new(true),
-    );
-
-    let i2s_dvr = I2sDriver::new_pdm_rx(i2s0, &rx_cfg, clk_gpio, din_gpio)?;
-
-    Ok(i2s_dvr)
-}
-
-fn average_and_standard_deviation(data: &[u16], n: u32 ) -> (u32, u32) {
-    // let n = n as f64;
-    let n = data.len() as f32;
-    let sum: f32 = data.iter().map(|x| *x as f32).sum();
-    let mean = sum / n;
-
-    let squared_diff_sum: f32 = data.iter().map(|x| (*x as f32 - mean).powi(2)).sum();
-    let variance = squared_diff_sum / n;
-    let standard_deviation = variance.sqrt();
-
-    (mean as u32, standard_deviation as u32)
-}
-
-struct SampleSet {
-    id: u32,
-    samples: [u16; 4092],
-    sample_count: usize,
-}
-
-static mut I2S_BUFFER: [u8; 4092 * 2] = [0u8; 4092 * 2];
-
-fn i2s_task(
-    i2s_rx: &mut I2sDriver<I2sRx>,
-    sender: Sender<Arc<Mutex<SampleSet>>>,
-    recycler: Receiver<Arc<Mutex<SampleSet>>>,
-) -> Result<(), anyhow::Error> {
-    println!("Begin Read");
-
-    loop {
-        let bytes_read = i2s_rx.read(unsafe { &mut I2S_BUFFER }, 1000u32)?;
-
-        if bytes_read > 0 {
-            let (head, samples, tail) = unsafe { I2S_BUFFER.align_to::<u16>() };
-
-            assert!(head.is_empty());
-            assert!(tail.is_empty());
-
-            let sample_set_arc = recycler.recv()?;
-
-            {
-                let mut sample_set = sample_set_arc.lock().unwrap();
-
-                println!("Received {} into {}", &bytes_read, &sample_set.id);
-
-                sample_set.sample_count = samples.len();
-                sample_set.samples.copy_from_slice(samples);
-            }
-
-            sender.send(sample_set_arc)?;
-        }
-    }
-}
-
-fn consumer_task(
-    receiver: Receiver<Arc<Mutex<SampleSet>>>,
-    recycler: Sender<Arc<Mutex<SampleSet>>>,
-) -> Result<(), anyhow::Error> {
-    loop {
-        let sample_set_arc = receiver.recv()?;
-
-        {
-            let sample_set = sample_set_arc.lock().unwrap();
-
-        //     // Process the buffer
-            let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples, sample_set.sample_count as u32);
-
-            println!("Received: {}, Count: {}  {} {}", sample_set.id, sample_set.sample_count, mean, standard_deviation);
-        }
-
-        recycler.send(sample_set_arc)?;
-    }
-}
 
 fn main() -> Result<()> {
     println!("Hello, world!");
@@ -113,9 +19,6 @@ fn main() -> Result<()> {
     // It is necessary to call this function once. Otherwise some patches to the runtime
     // implemented by esp-idf-sys might not link properly. See https://github.com/esp-rs/esp-idf-template/issues/71
     esp_idf_svc::sys::link_patches();
-
-    // Bind the log crate to the ESP Logging facilities
-    esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
 
@@ -131,11 +34,11 @@ fn main() -> Result<()> {
     let (recycler_sender, recycler_receiver) = mpsc::channel();
 
     for i in 0..3 {
-        let sample_set = Arc::new(Mutex::new(SampleSet {
+        let sample_set = Box::new(SampleSet {
             id: i,
             samples: [0u16; 4092],
             sample_count: 0,
-        }));
+        });
 
         recycler_sender.send(sample_set)?;
     }
@@ -159,4 +62,88 @@ fn main() -> Result<()> {
     println!("Threads Completed");
 
     Ok(())
+}
+
+fn configure_i2s<'a>(
+    i2s0: I2S0,
+    clk_gpio: Gpio43,
+    din_gpio: Gpio46,
+) -> Result<I2sDriver<'a, I2sRx>, anyhow::Error> {
+    let rx_cfg = PdmRxConfig::new(
+        Config::default(),
+        PdmRxClkConfig::from_sample_rate_hz(96000),
+        PdmRxSlotConfig::from_bits_per_sample_and_slot_mode(DataBitWidth::Bits16, SlotMode::Mono),
+        PdmRxGpioConfig::new(true),
+    );
+
+    let i2s_dvr = I2sDriver::new_pdm_rx(i2s0, &rx_cfg, clk_gpio, din_gpio)?;
+
+    Ok(i2s_dvr)
+}
+
+struct SampleSet {
+    id: u32,
+    samples: [u16; 4092],
+    sample_count: usize,
+}
+
+fn average_and_standard_deviation(data: &[u16]) -> (f64, f64) {
+    let n = data.len() as f64;
+    let sum: f64 = data.iter().map(|x| *x as f64).sum();
+    let mean = sum / n;
+
+    let squared_diff_sum: f64 = data.iter().map(|x| (*x as f64 - mean).powi(2)).sum();
+    let variance = squared_diff_sum / n;
+    let standard_deviation = variance.sqrt();
+
+    (mean, standard_deviation)
+}
+
+fn consumer_task(
+    receiver: Receiver<Box<SampleSet>>,
+    recycler: Sender<Box<SampleSet>>,
+) -> Result<(), anyhow::Error> {
+    loop {
+        let sample_set = receiver.recv()?;
+
+        // Process the buffer
+        let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples);
+
+        // println!(
+        //     "Received: {}, Count: {} {} {}",
+        //     sample_set.id, sample_set.sample_count, mean as u32, standard_deviation as u32
+        // );
+
+        recycler.send(sample_set)?;
+    }
+}
+
+static mut I2S_BUFFER: [u8; 4092 * 2] = [0u8; 4092 * 2];
+
+fn i2s_task(
+    i2s_rx: &mut I2sDriver<I2sRx>,
+    sender: Sender<Box<SampleSet>>,
+    recycler: Receiver<Box<SampleSet>>,
+) -> Result<(), anyhow::Error> {
+    println!("Begin I2S Task");
+
+    loop {
+        let bytes_read = i2s_rx.read(unsafe { &mut I2S_BUFFER }, 1000u32)?;
+
+        if bytes_read > 0 {
+            let (head, samples, tail) = unsafe { I2S_BUFFER.align_to::<u16>() };
+
+            assert!(head.is_empty());
+            assert!(tail.is_empty());
+
+            let mut sample_set = recycler.recv()?;
+
+            // println!("Received {} into {}", &bytes_read, &sample_set.id);
+
+            sample_set.sample_count = samples.len();
+            sample_set.samples.copy_from_slice(samples);
+
+            sender.send(sample_set)?;
+        }
+    }
 }
