@@ -84,18 +84,25 @@ fn i2s_task(
     }
 }
 
-// fn consumer_task(receiver: Receiver<&'static mut SampleSet>, recycler: Sender<&'static mut SampleSet>) -> Result<(), anyhow::Error> {
-//     loop {
-//         let sample_set = receiver.recv()?;
+fn consumer_task(
+    receiver: Receiver<Arc<Mutex<SampleSet>>>,
+    recycler: Sender<Arc<Mutex<SampleSet>>>,
+) -> Result<(), anyhow::Error> {
+    loop {
+        let sample_set_arc = receiver.recv()?;
 
-//         // Process the buffer
-//         let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples);
+        {
+            let sample_set = sample_set_arc.lock().unwrap();
 
-//         println!("Mean: {}, Standard Deviation: {}", mean, standard_deviation);
+        //     // Process the buffer
+        //     let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples);
 
-//         recycler.send(sample_set)?;
-//     }
-// }
+            println!("Received: {}, Count: {}", sample_set.id, sample_set.sample_count);
+        }
+
+        recycler.send(sample_set_arc)?;
+    }
+}
 
 fn main() -> Result<()> {
     println!("Hello, world!");
@@ -120,33 +127,33 @@ fn main() -> Result<()> {
     println!("I2S Configured");
 
     let (sample_sender, sample_receiver) = mpsc::channel();
-    // let (recycler_sender, recycler_receiver) = mpsc::channel();
+    let (recycler_sender, recycler_receiver) = mpsc::channel();
 
-    for i in 0..2 {
+    for i in 0..3 {
         let sample_set = Arc::new(Mutex::new(SampleSet {
             id: i,
             samples: [0u16; 4092],
             sample_count: 0,
         }));
 
-        sample_sender.send(sample_set)?;
+        recycler_sender.send(sample_set)?;
     }
 
     println!("Channels Created");
 
     let i2s_thread = thread::spawn(move || {
-        i2s_task(&mut i2s_rx, sample_sender, sample_receiver).unwrap();
+        i2s_task(&mut i2s_rx, sample_sender, recycler_receiver).unwrap();
     });
 
-    // // Create the consumer thread
-    // let consumer_thread = thread::spawn(move || {
-    //     consumer_task(sample_receiver, recycler_sender).unwrap();
-    // });
+    // Create the consumer thread
+    let consumer_thread = thread::spawn(move || {
+        consumer_task(sample_receiver, recycler_sender).unwrap();
+    });
 
     println!("Threads Created");
 
     i2s_thread.join().unwrap();
-    // consumer_thread.join().unwrap();
+    consumer_thread.join().unwrap();
 
     println!("Threads Completed");
 
