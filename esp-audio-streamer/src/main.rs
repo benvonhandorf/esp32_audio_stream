@@ -32,16 +32,17 @@ fn configure_i2s<'a>(
     Ok(i2s_dvr)
 }
 
-fn average_and_standard_deviation(data: &[u16]) -> (f64, f64) {
-    let n = data.len() as f64;
-    let sum: f64 = data.iter().map(|x| *x as f64).sum();
+fn average_and_standard_deviation(data: &[u16], n: u32 ) -> (u32, u32) {
+    // let n = n as f64;
+    let n = data.len() as f32;
+    let sum: f32 = data.iter().map(|x| *x as f32).sum();
     let mean = sum / n;
 
-    let squared_diff_sum: f64 = data.iter().map(|x| (*x as f64 - mean).powi(2)).sum();
+    let squared_diff_sum: f32 = data.iter().map(|x| (*x as f32 - mean).powi(2)).sum();
     let variance = squared_diff_sum / n;
     let standard_deviation = variance.sqrt();
 
-    (mean, standard_deviation)
+    (mean as u32, standard_deviation as u32)
 }
 
 struct SampleSet {
@@ -95,9 +96,9 @@ fn consumer_task(
             let sample_set = sample_set_arc.lock().unwrap();
 
         //     // Process the buffer
-        //     let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples);
+            let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples, sample_set.sample_count as u32);
 
-            println!("Received: {}, Count: {}", sample_set.id, sample_set.sample_count);
+            println!("Received: {}, Count: {}  {} {}", sample_set.id, sample_set.sample_count, mean, standard_deviation);
         }
 
         recycler.send(sample_set_arc)?;
