@@ -6,12 +6,21 @@ edition = "2021"
 resolver = "2"
 rust-version = "1.71"
 
+[[bin]]
+name = "esp-audio-streamer"
+harness = false # do not use the built in cargo test harneess -> resolve rust-analyzer errors
+
 [profile.release]
+debug = false
 opt-level = "s"
+#lto = "fat"
+strip = true
+panic = "abort"
 
 [profile.dev]
-debug = true    # Symbols are nice and they don't increase the size on Flash
+debug = true
 opt-level = "z"
+lto = "off"
 
 [features]
 default = ["std", "esp-idf-svc/native"]

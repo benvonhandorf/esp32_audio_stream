@@ -1,15 +1,29 @@
 use anyhow::Result;
 
+use esp_idf_svc::hal::task;
+
 use std::borrow::BorrowMut;
+use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
+use std::time::Duration;
+
+use esp_idf_svc::log::EspLogger;
+use log::info;
+
+use esp_idf_svc::wifi::{BlockingWifi, EspWifi, AuthMethod, ClientConfiguration, Configuration };
+use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 
 use esp_idf_svc::hal::{
     self,
     gpio::{Gpio43, Gpio46},
     peripherals::Peripherals,
+    i2s::config::*, 
+    i2s::I2S0, 
+    i2s::*
 };
-use hal::{gpio::*, i2s::config::*, i2s::I2S0, i2s::*};
+
+mod wifi_management;
 
 fn main() -> Result<()> {
     println!("Hello, world!");
@@ -21,6 +35,22 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
 
     let peripherals = Peripherals::take().unwrap();
+    let sys_loop = EspSystemEventLoop::take()?;
+
+    let mut wifi = BlockingWifi::wrap(
+        EspWifi::new(peripherals.modem, sys_loop.clone(), None)?,
+        sys_loop,
+    )?;
+
+    wifi_management::connect_wifi(&mut wifi)?;
+
+    while !wifi_management::is_connected()? {
+        thread::sleep(Duration::from_secs(1));
+    }
+
+    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
+
+    info!("Wifi DHCP info: {:?}", ip_info);
 
     let io = peripherals.pins;
 
@@ -99,10 +129,23 @@ fn average_and_standard_deviation(data: &[u16]) -> (f64, f64) {
     (mean, standard_deviation)
 }
 
+static mut NETWORK_BUFFER: [u8; 4092 * 2] = [0u8; 4092 * 2];
+
+fn u16_to_bytes(input: &[u16], count: usize, output: &mut [u8]) {
+    for (i, &value) in input.iter().enumerate().take(count) {
+        let be_value = value.to_be(); // Convert to big-endian
+        output[i * 2] = (be_value >> 8) as u8;
+        output[i * 2 + 1] = be_value as u8;
+    }
+}
+
 fn consumer_task(
     receiver: Receiver<Box<SampleSet>>,
     recycler: Sender<Box<SampleSet>>,
 ) -> Result<(), anyhow::Error> {
+    let udp_socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to bind UDP socket");
+    let server_addr = "zealot:5555";
+
     loop {
         let sample_set = receiver.recv()?;
 
@@ -113,6 +156,17 @@ fn consumer_task(
         //     "Received: {}, Count: {} {} {}",
         //     sample_set.id, sample_set.sample_count, mean as u32, standard_deviation as u32
         // );
+
+        // Convert the u16 array to bytes
+        unsafe {
+            u16_to_bytes(
+                &sample_set.samples,
+                sample_set.sample_count,
+                &mut NETWORK_BUFFER,
+            );
+        }
+
+        udp_socket.send_to(unsafe { &NETWORK_BUFFER }, server_addr);
 
         recycler.send(sample_set)?;
     }

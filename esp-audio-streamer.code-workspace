@@ -1,0 +1,13 @@
+{
+	"settings": {
+		"rust-analyzer.linkedProjects": [
+			"esp-audio-streamer/Cargo.toml",
+			"udp_receive_server/Cargo.toml"
+		]
+	},
+	"folders": [
+		{
+			"path": "."
+		}
+	]
+}

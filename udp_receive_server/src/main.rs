@@ -11,7 +11,7 @@ fn main() -> std::io::Result<()> {
 
     // Thread to receive data
     thread::spawn(move || {
-        let mut buf = [0; 1500];
+        let mut buf = [0; 10000];
         loop {
             match socket.recv_from(&mut buf) {
                 Ok((size, _)) => {
@@ -32,6 +32,7 @@ fn main() -> std::io::Result<()> {
     // Thread to calculate and print throughput
     thread::spawn(move || {
         let mut total_bytes = 0;
+        let mut packets = 0;
         let mut start_time = Instant::now();
 
         loop {
@@ -39,16 +40,19 @@ fn main() -> std::io::Result<()> {
 
             if elapsed >= 5.0 {
                 let throughput = total_bytes as f64 / elapsed;
-                println!("Throughput: {:.2} bytes/sec", throughput);
+                let bytes_per_packet = total_bytes as f64 / packets as f64;
+                println!("Throughput: {:.2} bytes/sec {:.2} bytes / packet {} packets", throughput, bytes_per_packet, packets);
 
                 // Reset counters
                 total_bytes = 0;
+                packets = 0;
                 start_time = Instant::now();
             }
 
             match rx.recv_timeout(Duration::from_secs(5)) {
                 Ok(size) => {
                     total_bytes += size;
+                    packets += 1;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     //Timeout, continue
