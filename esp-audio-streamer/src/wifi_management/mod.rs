@@ -1,16 +1,14 @@
+use esp_idf_svc::ipv4::IpInfo;
 use esp_idf_svc::wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi};
-use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
 
 use log::info;
 
 mod wifi_credentials;
 
-static mut WIFI: Option<&mut BlockingWifi<EspWifi<'static>>> = Option::None;
+static mut WIFI: Option<BlockingWifi<EspWifi<'static>>> = None;
 
-pub fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()> {
+pub fn connect_wifi(mut wifi: BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()> {
     unsafe {
-        WIFI = Some(wifi);
-
         let wifi_configuration: Configuration = Configuration::Client(ClientConfiguration {
             ssid: wifi_credentials::SSID.try_into().unwrap(),
             bssid: None,
@@ -20,21 +18,42 @@ pub fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result
             ..Default::default()
         });
 
-        WIFI.unwrap().set_configuration(&wifi_configuration)?;
+        wifi.set_configuration(&wifi_configuration)?;
 
-        WIFI.unwrap().start()?;
+        wifi.start()?;
         info!("Wifi started");
 
-        WIFI.unwrap().connect()?;
-        info!("Wifi connected");
+        wifi.connect()?;
 
-        WIFI.unwrap().wait_netif_up()?;
-        info!("Wifi netif up");
+        wifi.wait_netif_up()?;
+
+        WIFI = Some(wifi);
     }
-
     Ok(())
 }
 
+unsafe fn get_wifi() -> Option<&'static mut BlockingWifi<EspWifi<'static>>> {
+    WIFI.as_mut()
+}
+
+// Example usage in another part of your code
 pub fn is_connected() -> anyhow::Result<bool> {
-    Ok(unsafe{ WIFI }.unwrap().is_connected()?)
+    unsafe {
+        if let Some(wifi) = get_wifi() {
+            Ok(wifi.is_connected().unwrap_or(false))
+        } else {
+            Ok(false)
+        } 
+    }
+}
+
+pub fn get_ip_info() -> anyhow::Result<Option<IpInfo>> {
+    unsafe {
+        if let Some(wifi) = get_wifi() {
+            let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
+            Ok(Some(ip_info))
+        } else {
+            Ok(None)
+        } 
+    }
 }

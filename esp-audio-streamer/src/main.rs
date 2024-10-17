@@ -1,26 +1,22 @@
 use anyhow::Result;
 
-use esp_idf_svc::hal::task;
-
-use std::borrow::BorrowMut;
 use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use esp_idf_svc::log::EspLogger;
 use log::info;
 
-use esp_idf_svc::wifi::{BlockingWifi, EspWifi, AuthMethod, ClientConfiguration, Configuration };
-use esp_idf_svc::{eventloop::EspSystemEventLoop, nvs::EspDefaultNvsPartition};
+use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 
 use esp_idf_svc::hal::{
-    self,
     gpio::{Gpio43, Gpio46},
+    i2s::config::*,
+    i2s::I2S0,
+    i2s::*,
     peripherals::Peripherals,
-    i2s::config::*, 
-    i2s::I2S0, 
-    i2s::*
 };
 
 mod wifi_management;
@@ -37,20 +33,20 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
     let sys_loop = EspSystemEventLoop::take()?;
 
-    let mut wifi = BlockingWifi::wrap(
+    let wifi = BlockingWifi::wrap(
         EspWifi::new(peripherals.modem, sys_loop.clone(), None)?,
         sys_loop,
     )?;
 
-    wifi_management::connect_wifi(&mut wifi)?;
+    wifi_management::connect_wifi(wifi)?;
 
     while !wifi_management::is_connected()? {
         thread::sleep(Duration::from_secs(1));
     }
 
-    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
-
-    info!("Wifi DHCP info: {:?}", ip_info);
+    if let Some(ip_info) = wifi_management::get_ip_info()? {
+        info!("Wifi DHCP info: {:?}", ip_info);
+    };
 
     let io = peripherals.pins;
 
@@ -66,7 +62,7 @@ fn main() -> Result<()> {
     for i in 0..3 {
         let sample_set = Box::new(SampleSet {
             id: i,
-            samples: [0u16; 4092],
+            samples: [0i16; BUFFER_SIZE / 2],
             sample_count: 0,
         });
 
@@ -101,7 +97,7 @@ fn configure_i2s<'a>(
 ) -> Result<I2sDriver<'a, I2sRx>, anyhow::Error> {
     let rx_cfg = PdmRxConfig::new(
         Config::default(),
-        PdmRxClkConfig::from_sample_rate_hz(96000),
+        PdmRxClkConfig::from_sample_rate_hz(48000),
         PdmRxSlotConfig::from_bits_per_sample_and_slot_mode(DataBitWidth::Bits16, SlotMode::Mono),
         PdmRxGpioConfig::new(true),
     );
@@ -111,27 +107,28 @@ fn configure_i2s<'a>(
     Ok(i2s_dvr)
 }
 
+const BUFFER_SIZE: usize = 1400;
+
+#[allow(dead_code)]
 struct SampleSet {
     id: u32,
-    samples: [u16; 4092],
+    samples: [i16; BUFFER_SIZE / 2],
     sample_count: usize,
 }
 
-fn average_and_standard_deviation(data: &[u16]) -> (f64, f64) {
-    let n = data.len() as f64;
-    let sum: f64 = data.iter().map(|x| *x as f64).sum();
-    let mean = sum / n;
+// fn average_and_standard_deviation(data: &[u16]) -> (f64, f64) {
+//     let n = data.len() as f64;
+//     let sum: f64 = data.iter().map(|x| *x as f64).sum();
+//     let mean = sum / n;
 
-    let squared_diff_sum: f64 = data.iter().map(|x| (*x as f64 - mean).powi(2)).sum();
-    let variance = squared_diff_sum / n;
-    let standard_deviation = variance.sqrt();
+//     let squared_diff_sum: f64 = data.iter().map(|x| (*x as f64 - mean).powi(2)).sum();
+//     let variance = squared_diff_sum / n;
+//     let standard_deviation = variance.sqrt();
 
-    (mean, standard_deviation)
-}
+//     (mean, standard_deviation)
+// }
 
-static mut NETWORK_BUFFER: [u8; 4092 * 2] = [0u8; 4092 * 2];
-
-fn u16_to_bytes(input: &[u16], count: usize, output: &mut [u8]) {
+fn i16_to_bytes(input: &[i16], count: usize, output: &mut [u8]) {
     for (i, &value) in input.iter().enumerate().take(count) {
         let be_value = value.to_be(); // Convert to big-endian
         output[i * 2] = (be_value >> 8) as u8;
@@ -146,33 +143,49 @@ fn consumer_task(
     let udp_socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to bind UDP socket");
     let server_addr = "zealot:5555";
 
+    let mut network_buffer: Box<[u8]> = vec![0u8; BUFFER_SIZE].into_boxed_slice();
+
     loop {
-        let sample_set = receiver.recv()?;
+        if let Ok(sample_set) = receiver.recv() {
+            let mut sample_offset = 0;
+
+            while sample_offset < sample_set.sample_count {
+                let buffer_samples = BUFFER_SIZE / 2;
+                let remaining_samples = sample_set.sample_count - sample_offset;
+                let samples_to_copy = if remaining_samples > buffer_samples {
+                    buffer_samples
+                } else {
+                    remaining_samples
+                };
+
+                // Convert the u16 array to bytes
+                i16_to_bytes(
+                    &sample_set.samples[sample_offset..samples_to_copy],
+                    samples_to_copy,
+                    &mut network_buffer,
+                );
+
+                if let Err(e) = udp_socket.send_to(&network_buffer[0..samples_to_copy * 2], server_addr) {
+                    println!("Error sending UDP packet: {:?}", e);
+                }
+
+                sample_offset += samples_to_copy;
+            }
+
+            recycler.send(sample_set)?;
+        } else {
+            println!("No data");
+        }
 
         // Process the buffer
-        let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples);
+        // let (mean, standard_deviation) = average_and_standard_deviation(&sample_set.samples);
 
         // println!(
         //     "Received: {}, Count: {} {} {}",
         //     sample_set.id, sample_set.sample_count, mean as u32, standard_deviation as u32
         // );
-
-        // Convert the u16 array to bytes
-        unsafe {
-            u16_to_bytes(
-                &sample_set.samples,
-                sample_set.sample_count,
-                &mut NETWORK_BUFFER,
-            );
-        }
-
-        udp_socket.send_to(unsafe { &NETWORK_BUFFER }, server_addr);
-
-        recycler.send(sample_set)?;
     }
 }
-
-static mut I2S_BUFFER: [u8; 4092 * 2] = [0u8; 4092 * 2];
 
 fn i2s_task(
     i2s_rx: &mut I2sDriver<I2sRx>,
@@ -181,11 +194,13 @@ fn i2s_task(
 ) -> Result<(), anyhow::Error> {
     println!("Begin I2S Task");
 
+    let mut i2s_buffer: Box<[u8]> = vec![0u8; BUFFER_SIZE].into_boxed_slice();
+
     loop {
-        let bytes_read = i2s_rx.read(unsafe { &mut I2S_BUFFER }, 1000u32)?;
+        let bytes_read = i2s_rx.read(&mut i2s_buffer, 1000u32)?;
 
         if bytes_read > 0 {
-            let (head, samples, tail) = unsafe { I2S_BUFFER.align_to::<u16>() };
+            let (head, samples, tail) = unsafe { i2s_buffer.align_to::<i16>() };
 
             assert!(head.is_empty());
             assert!(tail.is_empty());
