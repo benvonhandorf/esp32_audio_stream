@@ -21,6 +21,8 @@ use esp_idf_svc::hal::{
 
 mod wifi_management;
 
+mod sdcard;
+
 fn main() -> Result<()> {
     println!("Hello, world!");
 
@@ -32,6 +34,20 @@ fn main() -> Result<()> {
 
     let peripherals = Peripherals::take().unwrap();
     let sys_loop = EspSystemEventLoop::take()?;
+
+    let io = peripherals.pins;
+
+    // Configure SD Card
+
+    sdcard::configure_sdcard(
+        peripherals.spi2,
+        io.gpio40,
+        io.gpio14,
+        io.gpio39,
+        io.gpio12,
+    )?;
+
+    //Configure Wifi
 
     let wifi = BlockingWifi::wrap(
         EspWifi::new(peripherals.modem, sys_loop.clone(), None)?,
@@ -48,13 +64,13 @@ fn main() -> Result<()> {
         info!("Wifi DHCP info: {:?}", ip_info);
     };
 
-    let io = peripherals.pins;
-
     let mut i2s_rx = configure_i2s(peripherals.i2s0, io.gpio43, io.gpio46)?;
 
     i2s_rx.rx_enable()?;
 
     println!("I2S Configured");
+
+    // Build the communication channels
 
     let (sample_sender, sample_receiver) = mpsc::channel();
     let (recycler_sender, recycler_receiver) = mpsc::channel();
@@ -89,6 +105,8 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+
 
 fn configure_i2s<'a>(
     i2s0: I2S0,
