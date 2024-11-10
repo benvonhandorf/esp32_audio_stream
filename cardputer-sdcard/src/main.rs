@@ -1,5 +1,7 @@
 use std::io::Read;
 
+use esp_idf_svc::sys::EspError;
+
 const _HOST_FLAG_SPI: u32 = 1 << 3;
 const _HOST_FLAG_DEINIT_ARG: u32 = 1 << 5;
 const _DEFAULT_FREQUENCY: i32 = 20000;
@@ -42,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     let peripherals = Peripherals::take()?;
     let pins = peripherals.pins;
 
-    let spi_host_id = 3;
+    let spi_host_id = 2;
 
     let cs = 12;
     let mosi = 14;
@@ -88,8 +90,9 @@ fn main() -> anyhow::Result<()> {
             esp_idf_svc::sys::spi_dma_chan_t::from(driver_config.dma),
         );
 
-        if(r != esp_idf_svc::sys::ESP_OK) {
-            panic!("Failed to initialize SPI bus: {r}");
+        if r != esp_idf_svc::sys::ESP_OK {
+            let err = EspError::from(r);
+            panic!("Failed to initialize SPI bus {}: 0x{:0x} {:?}", spi_host_id, r, err);
         }
 
         let device_interface_config = esp_idf_svc::sys::spi_device_interface_config_t {
@@ -104,18 +107,18 @@ fn main() -> anyhow::Result<()> {
             ..Default::default()
         };
 
-        let device= esp_idf_svc::sys::spi_device_t {
-        };
+        let mut device_handle: esp_idf_svc::sys::spi_device_handle_t = std::ptr::null_mut();
 
-        let r = esp_idf_svc::sys::spi_bus_add_device(spi_host_id, &device_interface_config, &mut device);
+        let r = esp_idf_svc::sys::spi_bus_add_device(spi_host_id, &device_interface_config, &mut device_handle as *mut _);
 
-        if(r != esp_idf_svc::sys::ESP_OK) {
-            panic!("Failed to add device to bus: {r}");
+        if r != esp_idf_svc::sys::ESP_OK {
+            let err = EspError::from(r);
+            panic!("Failed to add device to bus {}: 0x{:0x} {:?}", spi_host_id, r, err);
         }
 
         let mount_path = "/sdcard";
 
-        let spi_host = sd_mmc_host_t {
+        let spi_host = esp_idf_svc::sys::sdmmc_host_t {
             flags: _HOST_FLAG_SPI | _HOST_FLAG_DEINIT_ARG,
             slot: spi_host_id as i32,
             max_freq_khz: 20000,
@@ -158,16 +161,36 @@ fn main() -> anyhow::Result<()> {
 
         let base_path = std::ffi::CString::new(mount_path).unwrap();
 
-        let config: esp_idf_svc::sys::esp_vfs_fat_mount_config_t = fat_configuration.into();
+        let vfat_mount_config = esp_idf_svc::sys::esp_vfs_fat_mount_config_t {
+            max_files: 4,
+            allocation_unit_size: 16 * 1024,
+            format_if_mount_failed: false,
+            ..Default::default()
+        };
 
-        let sd_mmc_host: esp_idf_svc::sys::sdmmc_host_t = esp_idf_svc::sys::esp_vfs_fat_sdspi_mount(
+        let mut sdspi_device_config = esp_idf_svc::sys::sdspi_device_config_t::default();
+        
+        sdspi_device_config.host_id = spi_host_id as u32;
+        sdspi_device_config.gpio_cd = esp_idf_svc::sys::gpio_num_t_GPIO_NUM_NC;
+        sdspi_device_config.gpio_wp = esp_idf_svc::sys::gpio_num_t_GPIO_NUM_NC;
+        sdspi_device_config.gpio_int = esp_idf_svc::sys::gpio_num_t_GPIO_NUM_NC;
+        sdspi_device_config.gpio_cs = cs;
+
+        let mut card: *mut esp_idf_svc::sys::sdmmc_card_t = core::ptr::null_mut();
+
+        let r = esp_idf_svc::sys::esp_vfs_fat_sdspi_mount(
             base_path.as_ptr(),
-            host_config,
-            spi_device.get_de
-            vice_configuration() as *const esp_idf_svc::sys::sdspi_device_config_t,
-            &config as *const esp_idf_svc::sys::esp_vfs_fat_mount_config_t,
+            &spi_host,
+            &sdspi_device_config,
+            &vfat_mount_config,
             &mut card as *mut *mut esp_idf_svc::sys::sdmmc_card_t,
         );
+
+        if r != esp_idf_svc::sys::ESP_OK {
+            let err = EspError::from(r);
+            panic!("Failed to mount vfs 0x{:0x} {:?}", r, err);
+        }
+        
     }
 
     // let _fat = Fat::mount(fat_configuration, host, "/sdcard")?;
