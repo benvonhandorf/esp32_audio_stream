@@ -193,8 +193,6 @@ fn main() -> anyhow::Result<()> {
         
     }
 
-    // let _fat = Fat::mount(fat_configuration, host, "/sdcard")?;
-
     println!("Mounted");
 
     {
