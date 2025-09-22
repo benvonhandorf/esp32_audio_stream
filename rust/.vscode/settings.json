@@ -1,0 +1,13 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "esp-audio-streamer/Cargo.toml",
+        "udp_receive_server/Cargo.toml"
+    ],
+    "idf.espIdfPath": "/home/benvh/esp/v5.5/esp-idf",
+    "idf.toolsPath": "/home/benvh/.espressif",
+    "idf.pythonInstallPath": "/usr/bin/python3",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-builtin.cfg"
+    ],
+    "idf.port": "/dev/ttyACM0"
+}

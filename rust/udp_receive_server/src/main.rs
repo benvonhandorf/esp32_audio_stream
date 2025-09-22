@@ -3,7 +3,7 @@ use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{OpenOptions};
 
 const BUFFER_SIZE: usize = 65535;
 

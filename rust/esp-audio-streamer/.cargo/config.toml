@@ -13,5 +13,11 @@ build-std = ["std", "panic_abort"]
 [env]
 MCU="esp32s3"
 # Note: this variable is not used by the pio builder (`cargo build --features pio`)
-ESP_IDF_VERSION = "v5.1.3"
+ESP_IDF_VERSION = "v5.5.1"
 
+
+[target.'cfg(any(target_arch = "xtensa"))']
+runner = "probe-rs run --chip esp32s3"
+
+[target.'cfg(any(target_arch = "riscv32",))']
+runner = "probe-rs run --chip esp32s3"
