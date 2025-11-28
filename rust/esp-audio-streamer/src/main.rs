@@ -7,7 +7,6 @@ use std::time::Duration;
 use log;
 
 use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 
 use esp_idf_svc::hal::{
@@ -43,7 +42,7 @@ fn main() -> anyhow::Result<()> {
 
     // Configure SD Card
 
-    sdcard::configure_sdcard(peripherals.spi2, io.gpio40, io.gpio14, io.gpio39, io.gpio12)?;
+    // sdcard::configure_sdcard(peripherals.spi2, io.gpio40, io.gpio14, io.gpio39, io.gpio12)?;
 
     //Configure Wifi
 
@@ -237,15 +236,16 @@ fn consumer_task(
                     remaining_samples
                 };
 
-                &sample_set.samples[sample_offset..samples_to_copy]
+                if sample_set.samples[sample_offset..samples_to_copy]
                     .to_network_bytes(&mut network_buffer)
-                    .unwrap();
-
-                if let Err(e) = udp_socket.send_to(
-                    &network_buffer.data[0..network_buffer.size_bytes],
-                    server_addrs,
-                ) {
-                    println!("Error sending UDP packet: {:?}", e);
+                    .is_ok()
+                {
+                    if let Err(e) = udp_socket.send_to(
+                        &network_buffer.data[0..network_buffer.size_bytes],
+                        server_addrs,
+                    ) {
+                        println!("Error sending UDP packet: {:?}", e);
+                    }
                 }
 
                 sample_offset += samples_to_copy;
@@ -305,13 +305,14 @@ fn sd_writer_task(
                     remaining_samples
                 };
 
-                &sample_set.samples[sample_offset..samples_to_copy]
+                if sample_set.samples[sample_offset..samples_to_copy]
                     .to_disk_bytes(&mut disk_buffer)
-                    .unwrap();
-
-                match file.write(&disk_buffer.data[0..disk_buffer.size_bytes]) {
-                    Err(why) => panic!("couldn't write to {:?}: {}", path, why),
-                    Ok(_) => {}
+                    .is_ok()
+                {
+                    match file.write(&disk_buffer.data[0..disk_buffer.size_bytes]) {
+                        Err(why) => panic!("couldn't write to {:?}: {}", path, why),
+                        Ok(_) => {}
+                    }
                 }
 
                 sample_offset += samples_to_copy;

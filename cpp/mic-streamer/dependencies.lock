@@ -1,0 +1,16 @@
+dependencies:
+  i2s_examples_common:
+    dependencies: []
+    source:
+      path: /home/benvh/esp/v5.5.1/esp-idf/examples/peripherals/i2s/i2s_examples_common
+      type: local
+    version: '*'
+  idf:
+    source:
+      type: idf
+    version: 5.5.1
+direct_dependencies:
+- i2s_examples_common
+manifest_hash: 5f98817157420ac5673a5b631ee91cf5035e7ab33018ef9448329066902ad4b2
+target: esp32s3
+version: 2.0.0

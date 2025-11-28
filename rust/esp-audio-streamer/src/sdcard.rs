@@ -3,10 +3,13 @@ use anyhow::Ok;
 use esp_idf_svc::fs::fatfs::Fatfs;
 use esp_idf_svc::fs::fatfs::MountedFatfs;
 use esp_idf_svc::hal::peripheral::Peripheral;
+use esp_idf_svc::hal::sd::SdCardDriver;
+use esp_idf_svc::hal::sd::spi::SdSpiHostDriver;
 use esp_idf_svc::hal::spi::SpiAnyPins;
 use esp_idf_svc::hal::gpio::OutputPin;
 use esp_idf_svc::hal::gpio::InputPin;
 
+use esp_idf_svc::hal::spi::SpiDriver;
 use esp_idf_svc::sys::EspError;
 
 use esp_idf_svc::
@@ -37,7 +40,7 @@ extern "C" fn spi_notify(transaction: *mut esp_idf_svc::sys::spi_transaction_t) 
     }
 }
 
-static MOUNTED_FATFS: Option<MountedFatfs<Fatfs<>>> = Option::None;
+static MOUNTED_FATFS: Option<MountedFatfs<Fatfs<SdCardDriver<SdSpiHostDriver<SpiDriver>>>>> = Option::None;
 
 pub fn configure_sdcard(
     spi: impl Peripheral<P = impl SpiAnyPins>,
@@ -77,7 +80,7 @@ pub fn configure_sdcard(
     )?;
 
     // Keep it around or else it will be dropped and unmounted
-    MOUNTED_FATFS = Option::Some(MountedFatfs::mount(Fatfs::new_sdcard(0, sd_card_driver)?, "/sdcard", 4)?);
+    // MOUNTED_FATFS = Option::Some(MountedFatfs::mount(Fatfs::new_sdcard(0, sd_card_driver)?, "/sdcard", 4)?);
 
     println!("Mounted");
 

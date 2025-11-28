@@ -3,7 +3,7 @@
         "esp-audio-streamer/Cargo.toml",
         "udp_receive_server/Cargo.toml"
     ],
-    "idf.espIdfPath": "/home/benvh/esp/v5.5/esp-idf",
+    "idf.espIdfPath": "/home/benvh/esp/v5.3.4/esp-idf",
     "idf.toolsPath": "/home/benvh/.espressif",
     "idf.pythonInstallPath": "/usr/bin/python3",
     "idf.openOcdConfigs": [

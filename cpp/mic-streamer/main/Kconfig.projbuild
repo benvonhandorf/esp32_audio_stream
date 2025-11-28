@@ -1,0 +1,10 @@
+menu "Audio Streamer Configuration"
+
+    config AUDIO_STREAMER_CONFIG_MODE
+        bool "Enable Configuration Mode"
+        default n
+        help
+            Enable configuration mode to set WiFi and TCP server settings.
+            When enabled, the device will prompt for configuration on first boot.
+
+endmenu
