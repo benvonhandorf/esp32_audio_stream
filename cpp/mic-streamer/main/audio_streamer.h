@@ -34,8 +34,8 @@ extern "C" {
 
 // Buffer Configuration
 #define AUDIO_BUFFER_SIZE       4096   // Bytes per I2S read
-#define AUDIO_BUFFER_COUNT      8      // Number of buffers in ring buffer
-#define AUDIO_QUEUE_SIZE        16     // Queue depth for audio buffers
+#define AUDIO_BUFFER_COUNT      16      // Number of buffers in ring buffer
+#define AUDIO_QUEUE_SIZE        32     // Queue depth for audio buffers
 
 // Network Configuration
 #define MAX_SSID_LEN            32
