@@ -416,6 +416,8 @@ esp_err_t start_recording(app_context_t *ctx)
                 ESP_LOGW(TAG, "SD card may not be present or filesystem is full");
                 ctx->sd_card_available = false;
             } else {
+                // Set larger buffer for better write performance (64KB)
+                setvbuf(ctx->sd_file, NULL, _IOFBF, 65536);
                 ESP_LOGI(TAG, "Recording to file: %s", ctx->current_filename);
             }
         }
@@ -448,8 +450,14 @@ esp_err_t stop_recording(app_context_t *ctx)
     // Disable I2S channel
     i2s_channel_disable(ctx->i2s_rx_chan);
 
+    // Allow writer task to drain the queue
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     // Close SD card file
     if (ctx->sd_file != NULL) {
+        // Flush and sync before closing to ensure all data is written
+        fflush(ctx->sd_file);
+        fsync(fileno(ctx->sd_file));
         fclose(ctx->sd_file);
         ctx->sd_file = NULL;
         ESP_LOGI(TAG, "Closed file: %s (%lu bytes written)",
@@ -497,8 +505,9 @@ void audio_capture_task(void *arg)
                 buf->timestamp = xTaskGetTickCount();
                 ctx->bytes_recorded += bytes_read;
 
-                // Send buffer to writer task
-                if (xQueueSend(ctx->audio_queue, &buf, 0) != pdTRUE) {
+                // Send buffer to writer task with small wait time
+                // Wait up to 100ms for queue space to prevent drops
+                if (xQueueSend(ctx->audio_queue, &buf, pdMS_TO_TICKS(100)) != pdTRUE) {
                     ESP_LOGW(TAG, "Audio queue full, dropping buffer");
                 }
 
@@ -520,6 +529,7 @@ void audio_writer_task(void *arg)
 {
     app_context_t *ctx = (app_context_t *)arg;
     audio_buffer_t *buf;
+    uint32_t write_count = 0;
 
     ESP_LOGI(TAG, "Audio writer task started");
 
@@ -530,6 +540,14 @@ void audio_writer_task(void *arg)
                 size_t written = fwrite(buf->data, 1, buf->size, ctx->sd_file);
                 if (written == buf->size) {
                     ctx->bytes_written_sd += written;
+                    write_count++;
+
+                    // Flush less frequently (every 256 writes = ~1MB) to avoid blocking
+                    // The libc buffer and SD card controller will handle intermediate buffering
+                    if (write_count >= 256) {
+                        fflush(ctx->sd_file);
+                        write_count = 0;
+                    }
                 } else {
                     ESP_LOGE(TAG, "SD card write error: wrote %d/%d bytes (errno=%d: %s)",
                              written, buf->size, errno, strerror(errno));
@@ -590,9 +608,10 @@ void audio_streamer_init(void)
         ESP_LOGW(TAG, "WiFi initialization failed or skipped");
     }
 
-    // Create tasks
-    xTaskCreate(audio_capture_task, "audio_capture", 4096, &g_app_ctx, 10, NULL);
-    xTaskCreate(audio_writer_task, "audio_writer", 4096, &g_app_ctx, 9, NULL);
+    // Create tasks with increased stack sizes for SD card operations
+    // Writer task has higher priority to prevent queue overflow
+    xTaskCreate(audio_capture_task, "audio_capture", 8192, &g_app_ctx, 9, NULL);
+    xTaskCreate(audio_writer_task, "audio_writer", 8192, &g_app_ctx, 10, NULL);
 
     ESP_LOGI(TAG, "Audio Streamer initialized successfully");
 }
