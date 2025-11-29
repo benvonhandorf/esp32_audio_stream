@@ -1,4 +1,4 @@
-set(srcs "main.c" "audio_streamer.c" "config_tool.c")
+set(srcs "main.c" "audio_streamer.c" "config_tool.c" "display.c")
 
 idf_component_register(
     SRCS ${srcs}
@@ -16,5 +16,6 @@ idf_component_register(
         vfs
         sdmmc
         console
+        esp_lcd
     INCLUDE_DIRS "."
 )

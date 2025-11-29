@@ -28,7 +28,9 @@
 #include "esp_netif.h"
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
+#include "esp_vfs.h"
 #include "audio_streamer.h"
+#include "display.h"
 
 static const char *TAG = "audio_streamer";
 
@@ -608,10 +610,18 @@ void audio_streamer_init(void)
         ESP_LOGW(TAG, "WiFi initialization failed or skipped");
     }
 
+    // Initialize display
+    ret = display_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Display initialization failed, continuing without display");
+    }
+
     // Create tasks with increased stack sizes for SD card operations
     // Writer task has higher priority to prevent queue overflow
+    // Display task runs at lower priority (5) to not interfere with audio
     xTaskCreate(audio_capture_task, "audio_capture", 8192, &g_app_ctx, 9, NULL);
     xTaskCreate(audio_writer_task, "audio_writer", 8192, &g_app_ctx, 10, NULL);
+    xTaskCreate(display_task, "display", 4096, &g_app_ctx, 5, NULL);
 
     ESP_LOGI(TAG, "Audio Streamer initialized successfully");
 }

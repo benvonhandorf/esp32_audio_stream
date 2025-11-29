@@ -100,6 +100,10 @@ typedef struct {
     uint32_t bytes_recorded;
     uint32_t bytes_sent_tcp;
     uint32_t bytes_written_sd;
+
+    // Display
+    uint64_t sd_total_bytes;
+    uint64_t sd_free_bytes;
 } app_context_t;
 
 // Function declarations
