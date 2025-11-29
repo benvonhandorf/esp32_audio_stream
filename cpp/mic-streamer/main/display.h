@@ -1,5 +1,5 @@
 /*
- * Display Module - ST7789V2 LCD Driver and UI
+ * Display Module - ST7789V2 LCD Driver with LVGL UI
  */
 
 #pragma once
@@ -10,6 +10,7 @@ extern "C" {
 
 #include "esp_err.h"
 #include "audio_streamer.h"
+#include "lvgl.h"
 
 // Display Configuration - ST7789V2
 #define LCD_MOSI_GPIO           35
@@ -24,20 +25,10 @@ extern "C" {
 #define LCD_OFFSET_X            52
 #define LCD_OFFSET_Y            40
 
-// RGB565 Color Definitions
-#define COLOR_BLACK   0x0000
-#define COLOR_WHITE   0xFFFF
-#define COLOR_RED     0xF800
-#define COLOR_GREEN   0x07E0
-#define COLOR_BLUE    0x001F
-#define COLOR_YELLOW  0xFFE0
-#define COLOR_CYAN    0x07FF
-#define COLOR_MAGENTA 0xF81F
-#define COLOR_GRAY    0x8410
-
 // Function declarations
 esp_err_t display_init(void);
 void display_task(void *arg);
+void display_update_status(app_context_t *ctx);
 
 #ifdef __cplusplus
 }

@@ -17,5 +17,7 @@ idf_component_register(
         sdmmc
         console
         esp_lcd
+        lvgl
+        esp_lvgl_port
     INCLUDE_DIRS "."
 )

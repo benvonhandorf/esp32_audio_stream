@@ -56,4 +56,6 @@ CMakeUserPresets.json
 
 build/**
 
+managed_components/**
+
 # End of https://www.toptal.com/developers/gitignore/api/c++,cmake
