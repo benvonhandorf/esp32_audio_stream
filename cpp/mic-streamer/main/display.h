@@ -18,8 +18,11 @@ extern "C" {
 #define LCD_DC_GPIO             34
 #define LCD_RST_GPIO            33
 #define LCD_BL_GPIO             38
-#define LCD_WIDTH               240
-#define LCD_HEIGHT              135
+// Physical dimensions: 240×135, but with swap_xy(true) we use swapped dimensions
+#define LCD_WIDTH               135
+#define LCD_HEIGHT              240
+#define LCD_OFFSET_X            52
+#define LCD_OFFSET_Y            40
 
 // RGB565 Color Definitions
 #define COLOR_BLACK   0x0000

@@ -250,10 +250,15 @@ esp_err_t display_init(void)
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI3_HOST, &io_config, &io_handle));
 
     // Configure LCD panel
+    // ST7789V2 has 240×320 internal memory, but M5 Cardputer displays 240×135
+    // With swap_xy, we need to set appropriate offsets for the visible area
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = LCD_RST_GPIO,
         .rgb_endian = LCD_RGB_ENDIAN_BGR,
         .bits_per_pixel = 16,
+        .flags = {
+            .reset_active_high = 0,
+        },
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &g_lcd_panel));
 
@@ -263,6 +268,12 @@ esp_err_t display_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(g_lcd_panel, true));
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(g_lcd_panel, true));
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(g_lcd_panel, true, false));
+
+    // Set gap to account for the visible area offset
+    // Physical display: 240w×135h, with swap_xy we treat as 135w×240h
+    // The display area needs proper row/column offset
+    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(g_lcd_panel, LCD_OFFSET_Y, LCD_OFFSET_X));
+
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(g_lcd_panel, true));
 
     // Clear screen
@@ -281,17 +292,30 @@ void display_task(void *arg)
 {
     app_context_t *ctx = (app_context_t *)arg;
     char line_buf[80];
+    app_state_t prev_state = APP_STATE_IDLE;
+    bool first_run = true;
 
     ESP_LOGI(TAG, "Display task started");
 
     while (1) {
-        // Clear screen
-        lcd_fill_rect(0, 0, LCD_WIDTH, LCD_HEIGHT, COLOR_BLACK);
+        // Refresh state before drawing
+        app_state_t state = get_app_state(ctx);
+        if (ctx->sd_card_available) {
+            update_sd_card_space(ctx);
+        }
 
-        // Title
-        lcd_draw_string(5, 5, "ESP32 Audio Streamer", COLOR_CYAN, COLOR_BLACK);
+        // Full screen redraw only on first run or state change
+        bool full_redraw = (first_run || state != prev_state);
+        if (full_redraw) {
+            lcd_fill_rect(0, 0, LCD_WIDTH, LCD_HEIGHT, COLOR_BLACK);
+            // Title (static - only draw on full redraw)
+            lcd_draw_string(5, 5, "ESP32 Audio Streamer", COLOR_CYAN, COLOR_BLACK);
+            first_run = false;
+            prev_state = state;
+        }
 
-        // WiFi status
+        // WiFi status - clear line and redraw
+        lcd_fill_rect(0, 20, LCD_WIDTH, 12, COLOR_BLACK);
         lcd_draw_string(5, 20, "WiFi:", COLOR_WHITE, COLOR_BLACK);
         if (ctx->wifi_connected) {
             lcd_draw_string(45, 20, "Connected", COLOR_GREEN, COLOR_BLACK);
@@ -299,10 +323,10 @@ void display_task(void *arg)
             lcd_draw_string(45, 20, "Disconnected", COLOR_RED, COLOR_BLACK);
         }
 
-        // SD Card status
+        // SD Card status - clear line and redraw
+        lcd_fill_rect(0, 35, LCD_WIDTH, 12, COLOR_BLACK);
         lcd_draw_string(5, 35, "SD:", COLOR_WHITE, COLOR_BLACK);
         if (ctx->sd_card_available) {
-            update_sd_card_space(ctx);
             uint32_t free_mb = ctx->sd_free_bytes / (1024 * 1024);
             uint32_t total_mb = ctx->sd_total_bytes / (1024 * 1024);
             snprintf(line_buf, sizeof(line_buf), "%lu/%luMB", free_mb, total_mb);
@@ -311,8 +335,8 @@ void display_task(void *arg)
             lcd_draw_string(30, 35, "Not Available", COLOR_RED, COLOR_BLACK);
         }
 
-        // Recording status
-        app_state_t state = get_app_state(ctx);
+        // Recording status - clear area and redraw
+        lcd_fill_rect(0, 50, LCD_WIDTH, 70, COLOR_BLACK);
         lcd_draw_string(5, 50, "Status:", COLOR_WHITE, COLOR_BLACK);
 
         if (state == APP_STATE_RECORDING) {
@@ -335,8 +359,9 @@ void display_task(void *arg)
             lcd_draw_string(5, 65, "Press BTN to record", COLOR_GRAY, COLOR_BLACK);
         }
 
-        // Server info
+        // Server info - only redraw if TCP enabled
         if (ctx->config.tcp_enabled && strlen(ctx->config.server_addr) > 0) {
+            lcd_fill_rect(0, 110, LCD_WIDTH, 12, COLOR_BLACK);
             snprintf(line_buf, sizeof(line_buf), "Server: %s:%d",
                      ctx->config.server_addr, ctx->config.server_port);
             lcd_draw_string(5, 110, line_buf, COLOR_WHITE, COLOR_BLACK);
