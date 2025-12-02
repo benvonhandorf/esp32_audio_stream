@@ -533,22 +533,50 @@ void audio_writer_task(void *arg)
     audio_buffer_t *buf;
     uint32_t write_count = 0;
 
+    // Throughput tracking
+    uint32_t throughput_bytes = 0;
+    uint32_t throughput_start_time = 0;
+
     ESP_LOGI(TAG, "Audio writer task started");
 
     while (1) {
         if (xQueueReceive(ctx->audio_queue, &buf, portMAX_DELAY) == pdTRUE) {
             // Write to SD card
             if (ctx->sd_file != NULL) {
+                uint32_t write_start = xTaskGetTickCount();
                 size_t written = fwrite(buf->data, 1, buf->size, ctx->sd_file);
+
                 if (written == buf->size) {
                     ctx->bytes_written_sd += written;
                     write_count++;
 
+                    // Track throughput
+                    if (throughput_start_time == 0) {
+                        throughput_start_time = write_start;
+                    }
+                    throughput_bytes += written;
+
                     // Flush less frequently (every 256 writes = ~1MB) to avoid blocking
                     // The libc buffer and SD card controller will handle intermediate buffering
                     if (write_count >= 256) {
+                        uint32_t flush_start = xTaskGetTickCount();
                         fflush(ctx->sd_file);
+                        uint32_t flush_end = xTaskGetTickCount();
                         write_count = 0;
+
+                        // Log throughput every flush (approximately every 1MB)
+                        uint32_t elapsed_ms = (flush_end - throughput_start_time) * portTICK_PERIOD_MS;
+                        if (elapsed_ms > 0) {
+                            float throughput_kbps = (throughput_bytes * 8.0f) / elapsed_ms;  // kbit/s
+                            float throughput_kBps = (throughput_bytes / 1024.0f) / (elapsed_ms / 1000.0f);  // KB/s
+                            uint32_t flush_time_ms = (flush_end - flush_start) * portTICK_PERIOD_MS;
+                            ESP_LOGI(TAG, "SD write: %.1f KB/s (%.0f kbps), flush took %lu ms",
+                                     throughput_kBps, throughput_kbps, flush_time_ms);
+                        }
+
+                        // Reset throughput counters
+                        throughput_bytes = 0;
+                        throughput_start_time = flush_end;
                     }
                 } else {
                     ESP_LOGE(TAG, "SD card write error: wrote %d/%d bytes (errno=%d: %s)",

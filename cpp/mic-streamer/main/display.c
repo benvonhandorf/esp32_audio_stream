@@ -110,7 +110,8 @@ esp_err_t display_init(void)
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = LCD_RST_GPIO,
-        .rgb_endian = LCD_RGB_ENDIAN_BGR,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .data_endian = LCD_RGB_DATA_ENDIAN_LITTLE,
         .bits_per_pixel = 16,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle));
@@ -119,9 +120,6 @@ esp_err_t display_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));
-    // ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, false));
-    // ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, false, false));
-    // ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, LCD_OFFSET_Y, LCD_OFFSET_X));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
     // Initialize LVGL port
@@ -159,49 +157,49 @@ esp_err_t display_init(void)
     // Title label
     g_title_label = lv_label_create(g_screen);
     lv_label_set_text(g_title_label, "ESP32 Audio Streamer");
-    lv_obj_set_style_text_color(g_title_label, lv_color_hex(0x00FFFF), 0); // Cyan
+    lv_obj_set_style_text_color(g_title_label, lv_color_hex(LCD_COLOR_TITLE), 0);
     lv_obj_align(g_title_label, LV_ALIGN_TOP_LEFT, 5, 5);
 
     // WiFi status label
     g_wifi_label = lv_label_create(g_screen);
     lv_label_set_text(g_wifi_label, "WiFi: Disconnected");
-    lv_obj_set_style_text_color(g_wifi_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(g_wifi_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_wifi_label, LV_ALIGN_TOP_LEFT, 5, 20);
 
     // SD card label
     g_sd_label = lv_label_create(g_screen);
     lv_label_set_text(g_sd_label, "SD: Not Available");
-    lv_obj_set_style_text_color(g_sd_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(g_sd_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_sd_label, LV_ALIGN_TOP_LEFT, 5, 35);
 
     // Status label
     g_status_label = lv_label_create(g_screen);
     lv_label_set_text(g_status_label, "Status: Idle");
-    lv_obj_set_style_text_color(g_status_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(g_status_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_status_label, LV_ALIGN_TOP_LEFT, 5, 50);
 
     // Time label (for recording)
     g_time_label = lv_label_create(g_screen);
     lv_label_set_text(g_time_label, "");
-    lv_obj_set_style_text_color(g_time_label, lv_color_hex(0xFFFF00), 0); // Yellow
+    lv_obj_set_style_text_color(g_time_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_time_label, LV_ALIGN_TOP_LEFT, 5, 65);
 
     // Size label (for recording)
     g_size_label = lv_label_create(g_screen);
     lv_label_set_text(g_size_label, "");
-    lv_obj_set_style_text_color(g_size_label, lv_color_hex(0xFFFF00), 0); // Yellow
+    lv_obj_set_style_text_color(g_size_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_size_label, LV_ALIGN_TOP_LEFT, 5, 80);
 
     // TCP label
     g_tcp_label = lv_label_create(g_screen);
     lv_label_set_text(g_tcp_label, "");
-    lv_obj_set_style_text_color(g_tcp_label, lv_color_hex(0x00FF00), 0); // Green
+    lv_obj_set_style_text_color(g_tcp_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_tcp_label, LV_ALIGN_TOP_LEFT, 5, 95);
 
     // Server info label
     g_server_label = lv_label_create(g_screen);
     lv_label_set_text(g_server_label, "");
-    lv_obj_set_style_text_color(g_server_label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(g_server_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_server_label, LV_ALIGN_TOP_LEFT, 5, 110);
 
     // Load screen
@@ -232,10 +230,10 @@ void display_update_status(app_context_t *ctx)
 
     // Update WiFi status
     if (ctx->wifi_connected) {
-        lv_label_set_text(g_wifi_label, "WiFi: #00ff00 Connected#");
+        lv_label_set_text(g_wifi_label, "WiFi: #" STR(LCD_COLOR_POSITIVE) " Connected#");
         lv_label_set_recolor(g_wifi_label, true);
     } else {
-        lv_label_set_text(g_wifi_label, "WiFi: #ff0000 Disconnected#");
+        lv_label_set_text(g_wifi_label, "WiFi: #" STR(LCD_COLOR_NEGATIVE) " Disconnected#");
         lv_label_set_recolor(g_wifi_label, true);
     }
 
@@ -244,11 +242,11 @@ void display_update_status(app_context_t *ctx)
         update_sd_card_space(ctx);
         uint32_t free_mb = ctx->sd_free_bytes / (1024 * 1024);
         uint32_t total_mb = ctx->sd_total_bytes / (1024 * 1024);
-        snprintf(buf, sizeof(buf), "SD: #00ff00 %lu/%luMB#", free_mb, total_mb);
+        snprintf(buf, sizeof(buf), "SD: #%06x %lu/%luMB#", LCD_COLOR_POSITIVE, free_mb, total_mb);
         lv_label_set_text(g_sd_label, buf);
         lv_label_set_recolor(g_sd_label, true);
     } else {
-        lv_label_set_text(g_sd_label, "SD: #ff0000 Not Available#");
+        lv_label_set_text(g_sd_label, "SD: #" STR(LCD_COLOR_NEGATIVE) " Not Available#");
         lv_label_set_recolor(g_sd_label, true);
     }
 
@@ -277,7 +275,7 @@ void display_update_status(app_context_t *ctx)
         lv_label_set_text(g_status_label, "Status: #00ff00 Idle#");
         lv_label_set_recolor(g_status_label, true);
         lv_label_set_text(g_time_label, "Press BTN to record");
-        lv_obj_set_style_text_color(g_time_label, lv_color_hex(0x808080), 0); // Gray
+        lv_obj_set_style_text_color(g_time_label, lv_color_hex(LCD_COLOR_CORAL), 0); // Gray
         lv_label_set_text(g_size_label, "");
         lv_label_set_text(g_tcp_label, "");
     }
