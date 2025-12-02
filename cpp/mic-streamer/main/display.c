@@ -119,9 +119,9 @@ esp_err_t display_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, true));
-    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, false));
-    ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, false, false));
-    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, LCD_OFFSET_Y, LCD_OFFSET_X));
+    // ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, false));
+    // ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, false, false));
+    // ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel_handle, LCD_OFFSET_Y, LCD_OFFSET_X));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
     // Initialize LVGL port
@@ -134,16 +134,20 @@ esp_err_t display_init(void)
         .panel_handle = panel_handle,
         .buffer_size = LCD_WIDTH * LCD_HEIGHT / 10,
         .double_buffer = true,
-        .hres = LCD_WIDTH,
-        .vres = LCD_HEIGHT,
+        //Swapped to deal with swap X/Y
+        .hres = LCD_HEIGHT,
+        .vres = LCD_WIDTH,
         .monochrome = false,
         .rotation = {
             .swap_xy = true,
-            .mirror_x = false,
+            .mirror_x = true,
             .mirror_y = false,
         },
     };
     g_lvgl_disp = lvgl_port_add_disp(&disp_cfg);
+
+    //Happens after display setup to
+    lv_display_set_offset(g_lvgl_disp, LCD_OFFSET_Y, LCD_OFFSET_X);
 
     // Lock LVGL for UI creation
     lvgl_port_lock(0);
