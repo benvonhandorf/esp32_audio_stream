@@ -652,6 +652,7 @@ void audio_streamer_init(void)
     xTaskCreate(display_task, "display", 4096, &g_app_ctx, 5, NULL);
 
     ESP_LOGI(TAG, "Audio Streamer initialized successfully");
+    ESP_LOGI(TAG, "Configuration console available on USB serial port");
 }
 
 void audio_streamer_run(void)

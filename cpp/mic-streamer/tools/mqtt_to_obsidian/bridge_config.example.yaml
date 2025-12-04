@@ -1,0 +1,31 @@
+# Obsidian MQTT Bridge Configuration
+# Copy this file to bridge_config.yaml and customize as needed
+
+# Obsidian settings
+obsidian:
+  # Name of your Obsidian vault
+  vault_name: "MyVault"
+
+  # Absolute path to your vault directory (optional but recommended)
+  # If provided, uses direct file writing (faster and more reliable)
+  # If omitted, uses Obsidian URI (requires Advanced URI plugin)
+  # Examples:
+  #   macOS: /Users/username/Documents/ObsidianVault
+  #   Linux: /home/username/Documents/ObsidianVault
+  #   Windows: C:\Users\username\Documents\ObsidianVault
+  vault_path: "/path/to/your/vault"
+
+# MQTT settings
+mqtt:
+  # MQTT broker hostname or IP address
+  broker: "localhost"
+
+  # MQTT broker port
+  port: 1883
+
+  # MQTT topic to subscribe to (must match tcp_server.py publish topic)
+  topic: "sensors/transcription/text"
+
+  # MQTT authentication (optional)
+  username: ""
+  password: ""

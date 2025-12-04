@@ -1,0 +1,29 @@
+# Ignore data directory
+data/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Ignore audio files
+*.raw
+*.mp3
+*.wav
+
+# Ignore user config files
+config.yaml
+test_config.yaml
+
+# Ignore Docker files
+docker-compose.yml
+.dockerignore
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore documentation
+README*.md

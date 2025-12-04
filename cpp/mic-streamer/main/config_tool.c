@@ -310,32 +310,27 @@ static void register_commands(void)
     ESP_ERROR_CHECK(esp_console_cmd_register(&restart_cmd));
 }
 
-void config_tool_run(void)
-{
-    ESP_LOGI(TAG, "Starting configuration tool");
+// Task handle for background console
+static TaskHandle_t console_task_handle = NULL;
+static esp_console_repl_t *g_repl = NULL;
 
-    // Initialize NVS
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
+void config_console_task(void *arg)
+{
+    ESP_LOGI(TAG, "Starting configuration console");
 
     // Load existing configuration
     load_from_nvs();
 
     // Initialize console
-    esp_console_repl_t *repl = NULL;
     esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
     repl_config.prompt = "config> ";
     repl_config.max_cmdline_length = 256;
 
     // Configure to use UART
-    esp_console_dev_uart_config_t uart_config = ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();
+    esp_console_dev_usb_serial_jtag_config_t uart_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
 
     ESP_LOGI(TAG, "Initializing UART console");
-    ESP_ERROR_CHECK(esp_console_new_repl_uart(&uart_config, &repl_config, &repl));
+    ESP_ERROR_CHECK(esp_console_new_repl_usb_serial_jtag(&uart_config, &repl_config, &g_repl));
 
     // Register commands
     register_commands();
@@ -371,6 +366,17 @@ void config_tool_run(void)
     printf("Type 'show' to view configuration, or 'help' for more information.\n");
     printf("\n");
 
-    // Start REPL
-    ESP_ERROR_CHECK(esp_console_start_repl(repl));
+    // Start REPL (this blocks)
+    ESP_ERROR_CHECK(esp_console_start_repl(g_repl));
+
+    // This should never be reached, but clean up if it does
+    vTaskDelete(NULL);
 }
+
+void config_tool_start_background(void)
+{
+    // Create console task with high stack size
+    xTaskCreate(config_console_task, "config_console", 8192, NULL, 3, &console_task_handle);
+    ESP_LOGI(TAG, "Background configuration console started");
+}
+

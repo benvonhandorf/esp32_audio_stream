@@ -16,6 +16,7 @@ import threading
 from openai import OpenAI
 import io
 import json
+import yaml
 
 try:
     from pydub import AudioSegment
@@ -50,20 +51,20 @@ def get_next_connection_number():
         connection_count += 1
         return connection_count
 
-def mqtt_on_connect(client, userdata, flags, rc):
-    """MQTT connection callback"""
-    if rc == 0:
+def mqtt_on_connect(client, userdata, flags, reason_code, properties):
+    """MQTT connection callback (API v2)"""
+    if reason_code == 0:
         print(f"[MQTT] Connected successfully to broker")
     else:
-        print(f"[MQTT] Connection failed with code {rc}")
+        print(f"[MQTT] Connection failed with code {reason_code}")
 
-def mqtt_on_disconnect(client, userdata, rc):
-    """MQTT disconnection callback"""
-    if rc != 0:
-        print(f"[MQTT] Unexpected disconnection (code {rc})")
+def mqtt_on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    """MQTT disconnection callback (API v2)"""
+    if reason_code != 0:
+        print(f"[MQTT] Unexpected disconnection (code {reason_code})")
 
-def mqtt_on_publish(client, userdata, mid):
-    """MQTT publish callback"""
+def mqtt_on_publish(client, userdata, mid, reason_code, properties):
+    """MQTT publish callback (API v2)"""
     print(f"[MQTT] Message {mid} published successfully")
 
 def setup_mqtt(broker, port=1883, username=None, password=None):
@@ -77,7 +78,8 @@ def setup_mqtt(broker, port=1883, username=None, password=None):
         return False
 
     try:
-        mqtt_client = mqtt.Client()
+        # Use CallbackAPIVersion.VERSION2 for the modern callback API
+        mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         mqtt_client.on_connect = mqtt_on_connect
         mqtt_client.on_disconnect = mqtt_on_disconnect
         mqtt_client.on_publish = mqtt_on_publish
@@ -264,7 +266,12 @@ def handle_client(conn, addr, output_file, convert_mp3=True, keep_raw=False):
 
 def accept_connections(server_socket, args, executor):
     """Accept connections and submit them to the thread pool"""
+    # Create data directory if it doesn't exist
+    data_dir = 'data'
+    os.makedirs(data_dir, exist_ok=True)
+
     print('Ready to accept connections...')
+    print(f'Saving files to: {os.path.abspath(data_dir)}/')
 
     try:
         while True:
@@ -284,14 +291,14 @@ def accept_connections(server_socket, args, executor):
             # Generate output filename with timestamp and connection number
             if args.output:
                 # User specified a pattern, add timestamp and counter
-                base = args.output.rsplit('.', 1)[0]
+                base = os.path.basename(args.output).rsplit('.', 1)[0]
                 ext = args.output.rsplit('.', 1)[1] if '.' in args.output else 'raw'
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                output_file = f'{base}_{timestamp}_{conn_num}.{ext}'
+                output_file = os.path.join(data_dir, f'{base}_{timestamp}_{conn_num}.{ext}')
             else:
                 # Default pattern
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                output_file = f'audio_{timestamp}_{conn_num}.raw'
+                output_file = os.path.join(data_dir, f'audio_{timestamp}_{conn_num}.raw')
 
             # Submit connection handling to thread pool
             future = executor.submit(
@@ -325,20 +332,87 @@ def accept_connections(server_socket, args, executor):
     finally:
         print('\nShutting down...')
 
+def load_config(config_file):
+    """Load configuration from YAML file"""
+    try:
+        with open(config_file, 'r') as f:
+            config = yaml.safe_load(f)
+            return config if config else {}
+    except FileNotFoundError:
+        print(f"Warning: Config file '{config_file}' not found, using defaults")
+        return {}
+    except yaml.YAMLError as e:
+        print(f"Error parsing config file: {e}")
+        sys.exit(1)
+
 def main():
-    parser = argparse.ArgumentParser(description='TCP Audio Server with MP3 encoding and MQTT publishing')
-    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
-    parser.add_argument('--port', type=int, default=8888, help='Port to listen on (default: 8888)')
+    parser = argparse.ArgumentParser(
+        description='TCP Audio Server with MP3 encoding and MQTT publishing',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Configuration file support:
+  Use --config to specify a YAML configuration file. Command-line arguments
+  override configuration file values. Example config.yaml:
+
+    server:
+      host: 0.0.0.0
+      port: 8888
+      max_workers: 4
+
+    recording:
+      output_pattern: audio.raw
+      mp3_enabled: true
+      keep_raw: false
+
+    mqtt:
+      broker: mqtt.example.com
+      port: 1883
+      username: user
+      password: pass
+        '''
+    )
+    parser.add_argument('--config', '-c', help='Path to YAML configuration file')
+    parser.add_argument('--host', help='Host to bind to (default: 0.0.0.0)')
+    parser.add_argument('--port', type=int, help='Port to listen on (default: 8888)')
     parser.add_argument('--output', help='Output file pattern (default: audio_<timestamp>.raw)')
     parser.add_argument('--single', action='store_true', help='Exit after first connection (default: continuous)')
     parser.add_argument('--no-mp3', action='store_true', help='Disable MP3 conversion, save as raw only')
     parser.add_argument('--keep-raw', action='store_true', help='Keep raw PCM file after MP3 conversion')
-    parser.add_argument('--max-workers', type=int, default=4, help='Maximum concurrent connections (default: 4)')
+    parser.add_argument('--max-workers', type=int, help='Maximum concurrent connections (default: 4)')
     parser.add_argument('--mqtt-broker', help='MQTT broker hostname or IP address')
-    parser.add_argument('--mqtt-port', type=int, default=1883, help='MQTT broker port (default: 1883)')
+    parser.add_argument('--mqtt-port', type=int, help='MQTT broker port (default: 1883)')
     parser.add_argument('--mqtt-username', help='MQTT username (optional)')
     parser.add_argument('--mqtt-password', help='MQTT password (optional)')
     args = parser.parse_args()
+
+    # Load configuration file if specified
+    config = {}
+    if args.config:
+        config = load_config(args.config)
+
+    # Merge config file with command-line arguments (CLI args take precedence)
+    # Set defaults from config file, then override with CLI args
+    server_config = config.get('server', {})
+    recording_config = config.get('recording', {})
+    mqtt_config = config.get('mqtt', {})
+
+    # Apply configuration with priority: CLI args > config file > defaults
+    args.host = args.host or server_config.get('host', '0.0.0.0')
+    args.port = args.port or server_config.get('port', 8888)
+    args.max_workers = args.max_workers or server_config.get('max_workers', 4)
+
+    args.output = args.output or recording_config.get('output_pattern')
+    if not args.no_mp3 and not recording_config.get('mp3_enabled', True):
+        args.no_mp3 = True
+    if not args.keep_raw and recording_config.get('keep_raw', False):
+        args.keep_raw = True
+    if not args.single and recording_config.get('single_connection', False):
+        args.single = True
+
+    args.mqtt_broker = args.mqtt_broker or mqtt_config.get('broker')
+    args.mqtt_port = args.mqtt_port or mqtt_config.get('port', 1883)
+    args.mqtt_username = args.mqtt_username or mqtt_config.get('username')
+    args.mqtt_password = args.mqtt_password or mqtt_config.get('password')
 
     # Check for pydub if MP3 conversion is enabled
     if not args.no_mp3 and not PYDUB_AVAILABLE:

@@ -8,11 +8,10 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "config_tool.h"
 #include "audio_streamer.h"
-
-#ifdef CONFIG_AUDIO_STREAMER_CONFIG_MODE
-extern void config_tool_run(void);
-#endif
 
 static const char *TAG = "main";
 
@@ -24,11 +23,15 @@ void app_main(void)
     ESP_LOGI(TAG, "Audio: 48kHz 16-bit Mono PDM");
     ESP_LOGI(TAG, "================================================");
 
-#ifdef CONFIG_AUDIO_STREAMER_CONFIG_MODE
-    ESP_LOGI(TAG, "Running in configuration mode");
-    config_tool_run();
-#else
+        // Initialize NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+
+    config_tool_start_background();
     audio_streamer_init();
     audio_streamer_run();
-#endif
 }

@@ -1,0 +1,17 @@
+# Test configuration file
+server:
+  host: 127.0.0.1
+  port: 9999
+  max_workers: 2
+
+recording:
+  output_pattern: test_audio.raw
+  mp3_enabled: false
+  keep_raw: true
+  single_connection: true
+
+mqtt:
+  broker: test-mqtt.local
+  port: 1234
+  username: testuser
+  password: testpass
