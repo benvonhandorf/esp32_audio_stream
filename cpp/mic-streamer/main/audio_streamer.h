@@ -20,12 +20,14 @@ extern "C" {
 
 // Hardware Configuration - M5 Cardputer v1.0
 #define BUTTON_GPIO             0
+#define BUTTON_GPIO_2           2
 #define PDM_CLK_GPIO            43
 #define PDM_DATA_GPIO           46
 #define SD_CLK_GPIO             40
 #define SD_MISO_GPIO            39
 #define SD_MOSI_GPIO            14
 #define SD_CS_GPIO              12
+#define BATTERY_ADC_GPIO        10
 
 // Audio Configuration
 #define AUDIO_SAMPLE_RATE       48000
@@ -104,6 +106,9 @@ typedef struct {
     // Display
     uint64_t sd_total_bytes;
     uint64_t sd_free_bytes;
+
+    // Battery monitoring
+    float battery_voltage;
 } app_context_t;
 
 // Function declarations

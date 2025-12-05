@@ -29,13 +29,24 @@
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 #include "esp_vfs.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "audio_streamer.h"
+#include "audio_output.h"
 #include "display.h"
 
 static const char *TAG = "audio_streamer";
 
 static app_context_t g_app_ctx = {0};
 static sdmmc_card_t *g_sd_card = NULL;
+
+// ADC for battery monitoring
+static adc_oneshot_unit_handle_t g_adc_handle = NULL;
+static adc_cali_handle_t g_adc_cali_handle = NULL;
+
+// Audio output context
+static audio_output_context_t g_audio_output_ctx = {0};
 
 // ============================================================================
 // Configuration Management
@@ -142,7 +153,7 @@ esp_err_t button_init(void)
     ESP_LOGI(TAG, "Initializing button on GPIO %d", BUTTON_GPIO);
 
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << BUTTON_GPIO),
+        .pin_bit_mask = (1ULL << BUTTON_GPIO)|(1ULL << BUTTON_GPIO_2),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -152,6 +163,7 @@ esp_err_t button_init(void)
 
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
     ESP_ERROR_CHECK(gpio_isr_handler_add(BUTTON_GPIO, button_isr_handler, &g_app_ctx));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(BUTTON_GPIO_2, button_isr_handler, &g_app_ctx));
 
     return ESP_OK;
 }
@@ -226,6 +238,8 @@ esp_err_t sd_card_init(void)
 
     sdmmc_host_t host_config_input = SDSPI_HOST_DEFAULT();
     host_config_input.slot = SPI2_HOST;
+    //Implicitly sets the frequency to 20 MHz
+    //host_config_input.max_freq_khz = SDMMC_FREQ_DEFAULT;
 
     ret = esp_vfs_fat_sdspi_mount(SD_MOUNT_POINT, &host_config_input, &slot_config, &mount_config, &g_sd_card);
 
@@ -604,6 +618,77 @@ void audio_writer_task(void *arg)
 }
 
 // ============================================================================
+// Battery Monitoring
+// ============================================================================
+
+esp_err_t battery_adc_init(void)
+{
+    ESP_LOGI(TAG, "Initializing battery ADC");
+
+    // Configure ADC unit
+    adc_oneshot_unit_init_cfg_t adc_config = {
+        .unit_id = ADC_UNIT_1,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&adc_config, &g_adc_handle));
+
+    // Configure ADC channel for GPIO10 (ADC1_CHANNEL_9 on ESP32-S3)
+    adc_oneshot_chan_cfg_t chan_config = {
+        .atten = ADC_ATTEN_DB_12,  // 0-3.3V range
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(g_adc_handle, ADC_CHANNEL_9, &chan_config));
+
+    // Initialize ADC calibration
+    adc_cali_curve_fitting_config_t cali_config = {
+        .unit_id = ADC_UNIT_1,
+        .chan = ADC_CHANNEL_9,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+
+    esp_err_t ret = adc_cali_create_scheme_curve_fitting(&cali_config, &g_adc_cali_handle);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "ADC calibration initialized");
+    } else {
+        ESP_LOGW(TAG, "ADC calibration failed, using raw values");
+    }
+
+    return ESP_OK;
+}
+
+float battery_read_voltage(void)
+{
+    int raw_value = 0;
+    int voltage_mv = 0;
+
+    // Read raw ADC value
+    esp_err_t ret = adc_oneshot_read(g_adc_handle, ADC_CHANNEL_9, &raw_value);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read ADC: %s", esp_err_to_name(ret));
+        return 0.0f;
+    }
+
+    // Convert to voltage using calibration if available
+    if (g_adc_cali_handle != NULL) {
+        ret = adc_cali_raw_to_voltage(g_adc_cali_handle, raw_value, &voltage_mv);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to convert ADC to voltage: %s", esp_err_to_name(ret));
+            return 0.0f;
+        }
+    } else {
+        // Fallback: approximate conversion (3.3V / 4096 levels)
+        voltage_mv = (raw_value * 3300) / 4096;
+    }
+
+    // M5 Cardputer has a voltage divider (typically 2:1 ratio)
+    // So multiply by 2 to get actual battery voltage
+    float battery_voltage = (voltage_mv / 1000.0f) * 2.0f;
+
+    return battery_voltage;
+}
+
+// ============================================================================
 // Main Application
 // ============================================================================
 
@@ -623,6 +708,7 @@ void audio_streamer_init(void)
     ESP_ERROR_CHECK(config_init(&g_app_ctx));
     ESP_ERROR_CHECK(button_init());
     ESP_ERROR_CHECK(i2s_pdm_init(&g_app_ctx));
+    ESP_ERROR_CHECK(battery_adc_init());
 
     esp_err_t ret = sd_card_init();
     if (ret != ESP_OK) {
@@ -644,12 +730,22 @@ void audio_streamer_init(void)
         ESP_LOGW(TAG, "Display initialization failed, continuing without display");
     }
 
+    // Initialize audio output
+    ret = audio_output_init(&g_audio_output_ctx);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Audio output initialization failed, continuing without playback");
+    } else {
+        ESP_LOGI(TAG, "Audio output initialized successfully");
+    }
+
     // Create tasks with increased stack sizes for SD card operations
     // Writer task has higher priority to prevent queue overflow
     // Display task runs at lower priority (5) to not interfere with audio
+    // Audio output task runs at priority 8 for smooth playback
     xTaskCreate(audio_capture_task, "audio_capture", 8192, &g_app_ctx, 9, NULL);
     xTaskCreate(audio_writer_task, "audio_writer", 8192, &g_app_ctx, 10, NULL);
     xTaskCreate(display_task, "display", 4096, &g_app_ctx, 5, NULL);
+    // xTaskCreate(audio_output_task, "audio_output", 8192, &g_audio_output_ctx, 8, NULL);
 
     ESP_LOGI(TAG, "Audio Streamer initialized successfully");
     ESP_LOGI(TAG, "Configuration console available on USB serial port");
@@ -664,11 +760,13 @@ void audio_streamer_run(void)
 
         switch (state) {
             case APP_STATE_STARTING:
+                // audio_output_chirp_up(&g_audio_output_ctx);
                 start_recording(&g_app_ctx);
                 break;
 
             case APP_STATE_STOPPING:
                 stop_recording(&g_app_ctx);
+                // audio_output_chirp_down(&g_audio_output_ctx);
                 break;
 
             case APP_STATE_IDLE:

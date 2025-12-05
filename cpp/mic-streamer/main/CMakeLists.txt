@@ -1,4 +1,4 @@
-set(srcs "main.c" "audio_streamer.c" "config_tool.c" "display.c")
+set(srcs "main.c" "audio_streamer.c" "config_tool.c" "display.c" "audio_output.c")
 
 idf_component_register(
     SRCS ${srcs}
@@ -7,6 +7,7 @@ idf_component_register(
         esp_driver_gpio
         esp_driver_spi
         esp_driver_uart
+        esp_adc
         nvs_flash
         esp_wifi
         esp_netif

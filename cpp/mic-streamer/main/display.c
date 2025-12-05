@@ -21,6 +21,9 @@
 
 static const char *TAG = "display";
 
+// External function for battery voltage reading
+extern float battery_read_voltage(void);
+
 // LVGL objects
 static lv_obj_t *g_screen = NULL;
 static lv_obj_t *g_title_label = NULL;
@@ -31,6 +34,7 @@ static lv_obj_t *g_time_label = NULL;
 static lv_obj_t *g_size_label = NULL;
 static lv_obj_t *g_tcp_label = NULL;
 static lv_obj_t *g_server_label = NULL;
+static lv_obj_t *g_battery_label = NULL;
 
 // Display handle
 static lv_display_t *g_lvgl_disp = NULL;
@@ -202,6 +206,12 @@ esp_err_t display_init(void)
     lv_obj_set_style_text_color(g_server_label, lv_color_hex(LCD_COLOR_LABEL), 0);
     lv_obj_align(g_server_label, LV_ALIGN_TOP_LEFT, 5, 110);
 
+    // Battery voltage label
+    g_battery_label = lv_label_create(g_screen);
+    lv_label_set_text(g_battery_label, "Battery: --");
+    lv_obj_set_style_text_color(g_battery_label, lv_color_hex(LCD_COLOR_LABEL), 0);
+    lv_obj_align(g_battery_label, LV_ALIGN_TOP_LEFT, 5, 125);
+
     // Load screen
     lv_scr_load(g_screen);
 
@@ -288,6 +298,25 @@ void display_update_status(app_context_t *ctx)
         lv_label_set_text(g_server_label, "");
     }
 
+    // Update battery voltage
+    if (ctx->battery_voltage > 0.0f) {
+        // Color code based on voltage levels
+        // Typical Li-ion: 4.2V = full, 3.7V = nominal, 3.3V = low
+        uint32_t color;
+        if (ctx->battery_voltage >= 3.7f) {
+            color = LCD_COLOR_POSITIVE;  // Green/teal for good
+        } else if (ctx->battery_voltage >= 3.4f) {
+            color = LCD_COLOR_NEUTRAL;   // Yellow for medium
+        } else {
+            color = LCD_COLOR_NEGATIVE;  // Red/coral for low
+        }
+        snprintf(buf, sizeof(buf), "Battery: #%06lx %.2fV#", (unsigned long)color, ctx->battery_voltage);
+        lv_label_set_text(g_battery_label, buf);
+        lv_label_set_recolor(g_battery_label, true);
+    } else {
+        lv_label_set_text(g_battery_label, "Battery: --");
+    }
+
     // Unlock LVGL
     lvgl_port_unlock();
 }
@@ -302,7 +331,15 @@ void display_task(void *arg)
 
     ESP_LOGI(TAG, "Display task started");
 
+    uint32_t battery_read_counter = 0;
+
     while (1) {
+        // Read battery voltage every 10 cycles (5 seconds)
+        if (battery_read_counter % 10 == 0) {
+            ctx->battery_voltage = battery_read_voltage();
+        }
+        battery_read_counter++;
+
         // Update display
         display_update_status(ctx);
 
