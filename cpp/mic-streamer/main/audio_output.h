@@ -54,6 +54,8 @@ esp_err_t audio_output_start(audio_output_context_t *ctx);
 esp_err_t audio_output_stop(audio_output_context_t *ctx);
 esp_err_t audio_output_queue_data(audio_output_context_t *ctx, const uint8_t *data, size_t size);
 
+esp_err_t audio_output_status(audio_output_context_t *ctx, bool *playing);
+
 void audio_output_task(void *arg);
 
 #ifdef __cplusplus

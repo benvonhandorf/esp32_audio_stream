@@ -35,6 +35,7 @@
 #include "audio_streamer.h"
 #include "audio_output.h"
 #include "display.h"
+#include "soc/io_mux_reg.h"
 
 static const char *TAG = "audio_streamer";
 
@@ -450,6 +451,17 @@ esp_err_t start_recording(app_context_t *ctx)
     // Clear audio queue
     xQueueReset(ctx->audio_queue);
 
+    i2s_pdm_rx_gpio_config_t pdm_gpio_cfg = {
+        .clk = PDM_CLK_GPIO,
+        .din = PDM_DATA_GPIO,
+        .invert_flags = {
+            .clk_inv = false
+        }
+    };
+
+    //Reconfigure the clock pin for RX
+    ESP_ERROR_CHECK(i2s_channel_reconfig_pdm_rx_gpio(ctx->i2s_rx_chan, &pdm_gpio_cfg));
+
     // Enable I2S channel
     ESP_ERROR_CHECK(i2s_channel_enable(ctx->i2s_rx_chan));
 
@@ -745,7 +757,7 @@ void audio_streamer_init(void)
     xTaskCreate(audio_capture_task, "audio_capture", 8192, &g_app_ctx, 9, NULL);
     xTaskCreate(audio_writer_task, "audio_writer", 8192, &g_app_ctx, 10, NULL);
     xTaskCreate(display_task, "display", 4096, &g_app_ctx, 5, NULL);
-    // xTaskCreate(audio_output_task, "audio_output", 8192, &g_audio_output_ctx, 8, NULL);
+    xTaskCreate(audio_output_task, "audio_output", 8192, &g_audio_output_ctx, 8, NULL);
 
     ESP_LOGI(TAG, "Audio Streamer initialized successfully");
     ESP_LOGI(TAG, "Configuration console available on USB serial port");
@@ -757,16 +769,25 @@ void audio_streamer_run(void)
 
     while (1) {
         app_state_t state = get_app_state(&g_app_ctx);
+        bool wait;
 
         switch (state) {
             case APP_STATE_STARTING:
-                // audio_output_chirp_up(&g_audio_output_ctx);
+                audio_output_chirp_up(&g_audio_output_ctx);
+                audio_output_status(&g_audio_output_ctx, &wait);
+                
+                while(wait) {
+                    vTaskDelay(pdMS_TO_TICKS(10));
+
+                    audio_output_status(&g_audio_output_ctx, &wait);
+                }
+
                 start_recording(&g_app_ctx);
                 break;
 
             case APP_STATE_STOPPING:
                 stop_recording(&g_app_ctx);
-                // audio_output_chirp_down(&g_audio_output_ctx);
+                audio_output_chirp_down(&g_audio_output_ctx);
                 break;
 
             case APP_STATE_IDLE:
