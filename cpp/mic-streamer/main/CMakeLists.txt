@@ -1,4 +1,4 @@
-set(srcs "main.c" "audio_streamer.c" "config_tool.c" "display.c" "audio_output.c")
+set(srcs "main.c" "audio_streamer.c" "network.c" "config_tool.c" "display.c" "audio_output.c")
 
 idf_component_register(
     SRCS ${srcs}

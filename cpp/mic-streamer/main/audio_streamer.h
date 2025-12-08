@@ -17,6 +17,7 @@ extern "C" {
 #include "freertos/semphr.h"
 #include "driver/i2s_pdm.h"
 #include "esp_err.h"
+#include "network.h"
 
 // Hardware Configuration - M5 Cardputer v1.0
 #define BUTTON_GPIO             0
@@ -39,12 +40,6 @@ extern "C" {
 #define AUDIO_BUFFER_COUNT      16      // Number of buffers in ring buffer
 #define AUDIO_QUEUE_SIZE        32     // Queue depth for audio buffers
 
-// Network Configuration
-#define MAX_SSID_LEN            32
-#define MAX_PASSWORD_LEN        64
-#define MAX_SERVER_ADDR_LEN     64
-#define DEFAULT_SERVER_PORT     8888
-
 // SD Card Configuration
 #define SD_MOUNT_POINT          "/sdcard"
 #define AUDIO_FILE_PREFIX       "audio_"
@@ -65,15 +60,6 @@ typedef struct {
     uint32_t timestamp;
 } audio_buffer_t;
 
-// Configuration Structure
-typedef struct {
-    char wifi_ssid[MAX_SSID_LEN];
-    char wifi_password[MAX_PASSWORD_LEN];
-    char server_addr[MAX_SERVER_ADDR_LEN];
-    uint16_t server_port;
-    bool tcp_enabled;
-} app_config_t;
-
 // Application Context
 typedef struct {
     app_state_t state;
@@ -92,11 +78,7 @@ typedef struct {
     bool sd_card_available;
 
     // Network
-    int tcp_socket;
-    bool wifi_connected;
-
-    // Configuration
-    app_config_t config;
+    network_context_t network;
 
     // Statistics
     uint32_t bytes_recorded;
@@ -120,8 +102,6 @@ esp_err_t config_init(app_context_t *ctx);
 esp_err_t button_init(void);
 esp_err_t i2s_pdm_init(app_context_t *ctx);
 esp_err_t sd_card_init(void);
-esp_err_t wifi_init(app_context_t *ctx);
-esp_err_t tcp_client_init(app_context_t *ctx);
 
 // State management
 void set_app_state(app_context_t *ctx, app_state_t new_state);

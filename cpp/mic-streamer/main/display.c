@@ -239,7 +239,7 @@ void display_update_status(app_context_t *ctx)
     app_state_t state = get_app_state(ctx);
 
     // Update WiFi status
-    if (ctx->wifi_connected) {
+    if (ctx->network.wifi_connected) {
         lv_label_set_text(g_wifi_label, "WiFi: #" STR(LCD_COLOR_POSITIVE) " Connected#");
         lv_label_set_recolor(g_wifi_label, true);
     } else {
@@ -276,7 +276,7 @@ void display_update_status(app_context_t *ctx)
         lv_label_set_text(g_size_label, buf);
 
         // Show TCP status
-        if (ctx->tcp_socket >= 0) {
+        if (ctx->network.tcp_socket >= 0) {
             lv_label_set_text(g_tcp_label, "TCP: Active");
         } else {
             lv_label_set_text(g_tcp_label, "");
@@ -291,8 +291,8 @@ void display_update_status(app_context_t *ctx)
     }
 
     // Update server info
-    if (ctx->config.tcp_enabled && strlen(ctx->config.server_addr) > 0) {
-        snprintf(buf, sizeof(buf), "Server: %s:%d", ctx->config.server_addr, ctx->config.server_port);
+    if (ctx->network.config.tcp_enabled && strlen(ctx->network.config.server_addr) > 0) {
+        snprintf(buf, sizeof(buf), "Server: %s:%d", ctx->network.config.server_addr, ctx->network.config.server_port);
         lv_label_set_text(g_server_label, buf);
     } else {
         lv_label_set_text(g_server_label, "");
