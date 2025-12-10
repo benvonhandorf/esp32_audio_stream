@@ -152,7 +152,7 @@ esp_err_t network_tcp_client_resolve(network_context_t* ctx) {
     ESP_LOGI(TAG, "Resolved %s to %s:%d", ctx->config.server_addr, ip_str,
              ctx->config.server_port);
 
-    //TODO: Attempt connect on a network task rather than the main
+    // TODO: Attempt connect on a network task rather than the main
     // Attempt to connect to the server to see if it's really alive
     // int sock =
     //     socket(ctx->server_addr->ai_family, ctx->server_addr->ai_socktype,

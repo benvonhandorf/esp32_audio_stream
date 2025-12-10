@@ -292,7 +292,7 @@ void display_update_status(app_context_t *ctx)
 
     // Update server info
     if (ctx->network.config.tcp_enabled && strlen(ctx->network.config.server_addr) > 0) {
-        snprintf(buf, sizeof(buf), "Server: %s:%d", ctx->network.config.server_addr, ctx->network.config.server_port);
+        snprintf(buf, sizeof(buf), "%s:%d", ctx->network.config.server_addr, ctx->network.config.server_port);
         lv_label_set_text(g_server_label, buf);
     } else {
         lv_label_set_text(g_server_label, "");

@@ -693,6 +693,9 @@ void audio_streamer_run(void) {
 
             case APP_STATE_STOPPING:
                 stop_recording(&g_app_ctx);
+
+                // vTaskDelay(pdMS_TO_TICKS(10));
+
                 audio_output_chirp_down(&g_audio_output_ctx);
                 break;
 
