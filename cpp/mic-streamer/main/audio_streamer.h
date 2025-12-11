@@ -64,6 +64,7 @@ typedef struct {
 typedef struct {
     app_state_t state;
     SemaphoreHandle_t state_mutex;
+    uint32_t state_change_timestamp;
 
     // I2S
     i2s_chan_handle_t i2s_rx_chan;

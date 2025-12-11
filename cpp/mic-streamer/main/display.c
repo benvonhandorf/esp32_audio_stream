@@ -13,6 +13,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
+#include "driver/ledc.h"
 #include "ff.h"
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
@@ -20,6 +21,13 @@
 #include "display.h"
 
 static const char *TAG = "display";
+
+// PWM configuration for backlight
+#define LEDC_TIMER              LEDC_TIMER_0
+#define LEDC_MODE               LEDC_LOW_SPEED_MODE
+#define LEDC_CHANNEL            LEDC_CHANNEL_0
+#define LEDC_DUTY_RES           LEDC_TIMER_8_BIT  // 8-bit resolution (0-255)
+#define LEDC_FREQUENCY          10000              // 10kHz PWM frequency
 
 // External function for battery voltage reading
 extern float battery_read_voltage(void);
@@ -78,13 +86,15 @@ esp_err_t display_init(void)
 {
     ESP_LOGI(TAG, "Initializing ST7789V2 display with LVGL");
 
-    // Initialize backlight GPIO
-    gpio_config_t bk_gpio_config = {
+    gpio_config_t backlight_conf = {
         .pin_bit_mask = (1ULL << LCD_BL_GPIO),
         .mode = GPIO_MODE_OUTPUT,
     };
-    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
-    gpio_set_level(LCD_BL_GPIO, 1); // Turn on backlight
+    ESP_ERROR_CHECK(gpio_config(&backlight_conf));
+
+    display_set_backlight(true);
+
+    ESP_LOGI(TAG, "Backlight PWM initialized on GPIO %d", LCD_BL_GPIO);
 
     // Configure SPI bus
     spi_bus_config_t buscfg = {
@@ -319,6 +329,11 @@ void display_update_status(app_context_t *ctx)
 
     // Unlock LVGL
     lvgl_port_unlock();
+}
+
+void display_set_backlight(bool on)
+{
+    gpio_set_level(LCD_BL_GPIO, on ? 1 : 0);
 }
 
 // ============================================================================

@@ -210,7 +210,7 @@ class ObsidianMQTTBridge:
             elif sys.platform == 'win32':
                 subprocess.run(['start', uri], shell=True, check=True)
 
-            print(f"Opened Obsidian URI for daily note: {date_str}")
+            print(f"Opened Obsidian URI for daily note")
 
         except Exception as e:
             print(f"Error opening Obsidian URI: {e}")

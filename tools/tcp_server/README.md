@@ -156,6 +156,15 @@ docker run esp32-audio-server --max-workers 8
 docker run esp32-audio-server --single
 ```
 
+## Firewall Rules
+
+The application defaults to port 8888/TCP.  You must allow inboud connections on this port on the machine where this service runs.
+
+A sample `ufw` firewall application rule is included in `stenographer.ufw`.  
+To make use of this:
+- `sudo cp stenographer.ufw /etc/ufw/applications.d/stenographer`
+- `sudo ufw allow (from <subnet>/24) to any app "stenographer"`
+
 ## Data Directory
 
 All audio files are saved to the `data/` subdirectory:

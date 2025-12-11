@@ -137,11 +137,13 @@ static void IRAM_ATTR button_isr_handler(void* arg) {
         app_state_t current_state = ctx->state;
         if (current_state == APP_STATE_IDLE) {
             ctx->state = APP_STATE_STARTING;
+            ctx->state_change_timestamp = xTaskGetTickCount();
         }
     } else {  // Button released
         app_state_t current_state = ctx->state;
         if (current_state == APP_STATE_RECORDING) {
             ctx->state = APP_STATE_STOPPING;
+            ctx->state_change_timestamp = xTaskGetTickCount();
         }
     }
 
@@ -266,6 +268,7 @@ esp_err_t sd_card_init(void) {
 void set_app_state(app_context_t* ctx, app_state_t new_state) {
     xSemaphoreTake(ctx->state_mutex, portMAX_DELAY);
     ctx->state = new_state;
+    ctx->state_change_timestamp = xTaskGetTickCount();
     xSemaphoreGive(ctx->state_mutex);
 }
 
@@ -395,6 +398,8 @@ esp_err_t stop_recording(app_context_t* ctx) {
 void audio_capture_task(void* arg) {
     app_context_t* ctx = (app_context_t*)arg;
     static uint8_t buffer_index = 0;
+
+    g_app_ctx.state_change_timestamp = xTaskGetTickCount();
 
     ESP_LOGI(TAG, "Audio capture task started");
 
@@ -679,6 +684,9 @@ void audio_streamer_run(void) {
 
         switch (state) {
             case APP_STATE_STARTING:
+                // Restore full backlight brightness when starting to record
+                display_set_backlight(true);
+
                 audio_output_chirp_up(&g_audio_output_ctx);
                 audio_output_status(&g_audio_output_ctx, &wait);
 
@@ -700,6 +708,15 @@ void audio_streamer_run(void) {
                 break;
 
             case APP_STATE_IDLE:
+                uint32_t now = xTaskGetTickCount();
+
+                if ((now - g_app_ctx.state_change_timestamp) >
+                        pdMS_TO_TICKS(30 * 1000)) {
+                    // Turn backlight off after 30 seconds
+                    display_set_backlight(false);
+
+                }
+                break;
             case APP_STATE_RECORDING:
             default:
                 break;

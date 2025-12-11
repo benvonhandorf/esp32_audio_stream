@@ -21,6 +21,15 @@ pip install paho-mqtt PyYAML
 # Settings > Community plugins > Browse > "Advanced URI"
 ```
 
+## Installation
+
+- Create a virtual environment for the script
+- Install the requirements using `python3 -m pip install -r requirements.txt`
+- Configure the script, using either a config.yaml file or command line options.
+- Create a `.desktop` file for Obsidian, if one does not exist already
+- Add `MimeType=x-scheme-handler/obsidian;` to the `.desktop` file
+- Run `update-desktop-database <desktop file location>`
+
 ## Quick Start
 
 ### Method 1: Direct File Writing (Recommended)

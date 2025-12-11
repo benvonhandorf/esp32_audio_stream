@@ -1,0 +1,4 @@
+[stenographer]
+title=stenographer
+description=Raw audio TTS server
+ports=8888

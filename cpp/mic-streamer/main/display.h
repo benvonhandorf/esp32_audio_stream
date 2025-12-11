@@ -29,6 +29,7 @@ extern "C" {
 esp_err_t display_init(void);
 void display_task(void *arg);
 void display_update_status(app_context_t *ctx);
+void display_set_backlight(bool on);
 
 #define LCD_COLOR_RED 0x4C212A
 #define LCD_COLOR_GREEN 0xC9CBA3
